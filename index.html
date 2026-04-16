@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>URL Board</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --panel: #181b24;
+      --border: #262a36;
+      --text: #e6e8ee;
+      --muted: #8a92a6;
+      --accent: #7aa2ff;
+      --ok: #5fd48a;
+      --warn: #ffb86b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 20px 60px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; gap: 12px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 22px; letter-spacing: .02em; }
+    h1 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 8px; vertical-align: middle; }
+    .status { color: var(--muted); font-size: 12px; font-feature-settings: "tnum"; }
+    .list { display: flex; flex-direction: column; gap: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; transition: border-color .15s; }
+    .card:hover { border-color: #3a4056; }
+    .name { font-weight: 600; font-size: 15px; letter-spacing: .01em; }
+    .desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .url { display: inline-block; margin-top: 10px; padding: 8px 12px; background: #1f2430; border: 1px solid #2a3040; border-radius: 6px; color: var(--accent); text-decoration: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; max-width: 100%; }
+    .url:hover { background: #262c3b; }
+    .meta { margin-top: 8px; color: var(--muted); font-size: 11px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .meta b { color: #a8b0c4; font-weight: 500; }
+    .empty, .error { padding: 40px 20px; text-align: center; color: var(--muted); }
+    .error { color: var(--warn); }
+    footer { margin-top: 36px; color: var(--muted); font-size: 12px; text-align: center; }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1><span class="dot"></span>URL Board</h1>
+      <div class="status" id="status">loading…</div>
+    </header>
+    <div class="list" id="list"><div class="empty">loading…</div></div>
+    <footer>
+      source: <a href="https://github.com/shimatoshi/project-urls" target="_blank" rel="noreferrer">shimatoshi/project-urls</a>
+    </footer>
+  </main>
+
+  <script>
+    const SRC = "https://raw.githubusercontent.com/shimatoshi/project-urls/main/urls.json";
+    const REFRESH_MS = 30_000;
+
+    const listEl = document.getElementById("list");
+    const statusEl = document.getElementById("status");
+
+    const fmt = (d) => {
+      if (!d) return "?";
+      const t = new Date(d);
+      if (isNaN(t)) return d;
+      const diff = (Date.now() - t) / 1000;
+      if (diff < 60) return `${Math.floor(diff)}s ago`;
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return t.toISOString().slice(0, 16).replace("T", " ");
+    };
+
+    async function load() {
+      statusEl.textContent = "fetching…";
+      try {
+        const r = await fetch(`${SRC}?t=${Date.now()}`, { cache: "no-store" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        render(data);
+        statusEl.textContent = `updated ${new Date().toLocaleTimeString("ja-JP")}`;
+      } catch (e) {
+        listEl.innerHTML = `<div class="error">取得失敗: ${e.message}</div>`;
+        statusEl.textContent = "error";
+      }
+    }
+
+    function render(data) {
+      const entries = Object.entries(data.projects || {});
+      if (!entries.length) {
+        listEl.innerHTML = `<div class="empty">no projects registered</div>`;
+        return;
+      }
+      listEl.innerHTML = entries.map(([key, p]) => `
+        <div class="card">
+          <div class="name">${esc(key)}</div>
+          ${p.description ? `<div class="desc">${esc(p.description)}</div>` : ""}
+          <a class="url" href="${esc(p.url)}" target="_blank" rel="noreferrer">${esc(p.url)}</a>
+          <div class="meta">
+            ${p.updated ? `<span><b>updated</b> ${esc(fmt(p.updated))}</span>` : ""}
+            ${p.host ? `<span><b>host</b> ${esc(p.host)}</span>` : ""}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
+
+    load();
+    setInterval(load, REFRESH_MS);
+  </script>
+</body>
+</html>
