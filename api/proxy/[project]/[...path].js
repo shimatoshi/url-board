@@ -1,108 +1,61 @@
-// Vercel Serverless Function: reverse proxy via project URL lookup
+// Vercel Serverless Function: reverse proxy with sub-path
 // Route: /api/proxy/:project/:path*
 
 const URLS_JSON = 'https://raw.githubusercontent.com/shimatoshi/project-urls/main/urls.json';
-const CACHE_TTL = 30 * 1000; // 30 seconds
+const CACHE_TTL = 30_000;
 
 let cachedData = null;
 let cacheTime = 0;
 
 async function getUrls() {
   const now = Date.now();
-  if (cachedData && now - cacheTime < CACHE_TTL) {
-    return cachedData;
-  }
-  const res = await fetch(URLS_JSON);
-  if (!res.ok) throw new Error(`Failed to fetch urls.json: ${res.status}`);
-  cachedData = await res.json();
+  if (cachedData && now - cacheTime < CACHE_TTL) return cachedData;
+  const r = await fetch(URLS_JSON, { headers: { 'User-Agent': 'url-board-proxy' } });
+  if (!r.ok) throw new Error(`Failed to fetch urls.json: ${r.status}`);
+  cachedData = await r.json();
   cacheTime = now;
   return cachedData;
 }
 
 module.exports = async (req, res) => {
-  // Handle CORS preflight
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || '*');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
   const { project, path: pathSegments } = req.query;
-  if (!project) {
-    return res.status(400).json({ error: 'Missing project parameter' });
-  }
+  if (!project) return res.status(400).json({ error: 'Missing project' });
 
   let urls;
-  try {
-    urls = await getUrls();
-  } catch (e) {
-    return res.status(502).json({ error: 'Failed to fetch project URLs', detail: e.message });
+  try { urls = await getUrls(); } catch (e) {
+    return res.status(502).json({ error: 'Failed to fetch urls.json', detail: e.message });
   }
 
-  const projectData = urls.projects?.[project];
-  if (!projectData || !projectData.url) {
-    return res.status(404).json({ error: `Project "${project}" not found or has no URL` });
-  }
+  const p = urls.projects?.[project];
+  if (!p?.url) return res.status(404).json({ error: `Project "${project}" not found` });
 
-  // Build target URL
   const subPath = Array.isArray(pathSegments) ? pathSegments.join('/') : (pathSegments || '');
-  const targetUrl = new URL(subPath, projectData.url.replace(/\/?$/, '/'));
+  const targetUrl = new URL(subPath, p.url.replace(/\/?$/, '/'));
+  const orig = new URL(req.url, `http://${req.headers.host}`);
+  targetUrl.search = orig.search;
 
-  // Preserve query string (exclude Vercel's routing params)
-  const originalUrl = new URL(req.url, `http://${req.headers.host}`);
-  targetUrl.search = originalUrl.search;
-
-  // Build headers to forward (skip hop-by-hop and Vercel internals)
-  const skipHeaders = new Set([
-    'host', 'connection', 'keep-alive', 'transfer-encoding',
-    'te', 'trailer', 'upgrade', 'proxy-authorization', 'proxy-authenticate',
-    'x-vercel-id', 'x-vercel-deployment-url', 'x-vercel-forwarded-for',
-    'x-real-ip', 'x-forwarded-for', 'x-forwarded-proto', 'x-forwarded-host',
-  ]);
-  const forwardHeaders = {};
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (!skipHeaders.has(key.toLowerCase())) {
-      forwardHeaders[key] = value;
-    }
-  }
-  forwardHeaders['host'] = targetUrl.host;
-
-  // Forward the request
   try {
-    const fetchOptions = {
-      method: req.method,
-      headers: forwardHeaders,
-      redirect: 'follow',
-    };
-
-    // Forward body for non-GET/HEAD requests
+    const opts = { method: req.method, headers: { 'User-Agent': 'url-board-proxy', 'Accept': '*/*' }, redirect: 'follow' };
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
-      if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) {
-        fetchOptions.body = req.body;
-      } else {
-        fetchOptions.body = JSON.stringify(req.body);
-      }
+      opts.body = typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? JSON.stringify(req.body) : req.body;
+      opts.headers['Content-Type'] = req.headers['content-type'] || 'application/json';
     }
 
-    const upstream = await fetch(targetUrl.toString(), fetchOptions);
+    const upstream = await fetch(targetUrl.toString(), opts);
+    const body = Buffer.from(await upstream.arrayBuffer());
 
-    // Forward response headers (skip hop-by-hop)
-    const responseSkip = new Set(['connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrade']);
-    for (const [key, value] of upstream.headers.entries()) {
-      if (!responseSkip.has(key.toLowerCase()) && key.toLowerCase() !== 'access-control-allow-origin') {
-        res.setHeader(key, value);
-      }
+    const skip = new Set(['connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'content-encoding', 'access-control-allow-origin']);
+    for (const [k, v] of upstream.headers.entries()) {
+      if (!skip.has(k.toLowerCase())) res.setHeader(k, v);
     }
-
-    // Ensure CORS header is set (overwrite upstream if any)
     res.setHeader('Access-Control-Allow-Origin', '*');
-
-    res.status(upstream.status);
-    const buffer = Buffer.from(await upstream.arrayBuffer());
-    return res.send(buffer);
+    return res.status(upstream.status).send(body);
   } catch (e) {
-    return res.status(502).json({ error: 'Proxy request failed', detail: e.message });
+    return res.status(502).json({ error: 'Proxy failed', detail: e.message });
   }
 };
