@@ -7,5 +7,15 @@
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/proxy/:project/:path*",
+      "destination": "/api/proxy/[project]/[...path]?project=:project&path=:path*"
+    },
+    {
+      "source": "/api/proxy/:project",
+      "destination": "/api/proxy/[project]?project=:project"
+    }
   ]
 }
