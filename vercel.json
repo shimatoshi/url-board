@@ -15,7 +15,7 @@
     },
     {
       "source": "/go/:project",
-      "destination": "/go/[project]?project=:project"
+      "destination": "/api/go/[project]?project=:project"
     }
   ]
 }
