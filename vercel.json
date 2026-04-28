@@ -10,16 +10,8 @@
   ],
   "rewrites": [
     {
-      "source": "/api/proxy/:project/:path(.*)",
-      "destination": "/api/proxy/[project]/[...path]?project=:project&path=:path*"
-    },
-    {
-      "source": "/api/proxy/:project/",
-      "destination": "/api/proxy/[project]?project=:project"
-    },
-    {
-      "source": "/api/proxy/:project",
-      "destination": "/api/proxy/[project]?project=:project"
+      "source": "/api/resolve/:project",
+      "destination": "/api/resolve/[project]?project=:project"
     }
   ]
 }
