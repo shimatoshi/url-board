@@ -12,6 +12,10 @@
     {
       "source": "/api/resolve/:project",
       "destination": "/api/resolve/[project]?project=:project"
+    },
+    {
+      "source": "/go/:project",
+      "destination": "/go/[project]?project=:project"
     }
   ]
 }
