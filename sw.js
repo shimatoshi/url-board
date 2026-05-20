@@ -1,4 +1,4 @@
-const CACHE = "urlboard-v1";
+const CACHE = "urlboard-v2";
 const PRECACHE = ["/", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
