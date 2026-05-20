@@ -1,4 +1,4 @@
-const CACHE = "urlboard-v3";
+const CACHE = "urlboard-v4";
 const PRECACHE = ["/", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -18,15 +18,8 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
 
-  // urls.json — always network-first (リアルタイム性重視)
-  if (url.href.includes("urls.json")) {
-    e.respondWith(
-      fetch(e.request).then((r) => {
-        const clone = r.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, clone));
-        return r;
-      }).catch(() => caches.match(e.request))
-    );
+  // urls.json — SWを通さない（常にネットワーク直アクセス、即時反映）
+  if (url.href.includes("urls.json") || url.href.includes("raw.githubusercontent.com")) {
     return;
   }
 
